@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>ジャッジ討伐 受付状況</title>
+<style>
+  :root {
+    --gray-bg-1: #cfcfcf;
+    --gray-bg-2: #a9a9a9;
+    --gray-font: #7a7a7a;
+    --gray-icon-opacity: 0.3;
+  }
+
+  * {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #0a0a12;
+    font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif;
+    overflow: hidden;
+  }
+
+  /* 背景に速度線っぽい模様を薄く敷いて、ゲーム画面のような臨場感を出す */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(ellipse at 20% 15%, rgba(255,60,60,0.18), transparent 45%),
+      radial-gradient(ellipse at 85% 80%, rgba(60,120,255,0.15), transparent 50%),
+      repeating-linear-gradient(115deg, rgba(255,255,255,0.035) 0px, rgba(255,255,255,0.035) 2px, transparent 2px, transparent 26px);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .screen {
+    position: relative;
+    z-index: 1;
+    width: 100vw;
+    height: 100vh;
+    padding: 2.2vh 2.2vw;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr 1fr;
+    gap: 2vh 2.2vw;
+  }
+
+  .logo-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+  }
+
+  .logo-cell img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    filter: drop-shadow(0 0 18px rgba(255,60,40,0.55)) drop-shadow(0 4px 0 rgba(0,0,0,0.5));
+  }
+
+  .status-btn {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2vw;
+    border: 0.6vh solid #1a1a1a;
+    border-radius: 2vh;
+    padding: 0 3vw;
+    cursor: pointer;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    transition: background 0.25s ease, box-shadow 0.25s ease, transform 0.1s ease;
+    box-shadow:
+      inset 0 -0.8vh 0 rgba(0,0,0,0.18),
+      inset 0 0.6vh 0 rgba(255,255,255,0.35),
+      0 0.6vh 0 rgba(0,0,0,0.35);
+  }
+
+  .status-btn:active {
+    transform: scale(0.96);
+  }
+
+  .status-btn .icon {
+    height: 68%;
+    width: auto;
+    max-width: 32%;
+    object-fit: contain;
+    transition: opacity 0.25s ease, filter 0.25s ease;
+    flex-shrink: 0;
+    filter: drop-shadow(0 3px 3px rgba(0,0,0,0.35));
+  }
+
+  .status-btn .text-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    line-height: 1.05;
+  }
+
+  .status-btn .label {
+    font-weight: 900;
+    color: #111111;
+    font-size: 5.2vh;
+    white-space: nowrap;
+    letter-spacing: 0.02em;
+    -webkit-text-stroke: 0.25vh rgba(0,0,0,0.55);
+    paint-order: stroke fill;
+    text-shadow: 0.3vh 0.3vh 0 rgba(0,0,0,0.25);
+    transition: color 0.25s ease, font-size 0.25s ease;
+    position: relative;
+  }
+
+  .status-btn .bay {
+    display: none;
+    font-weight: 700;
+    font-size: 2.1vh;
+    color: #111111;
+    white-space: nowrap;
+    letter-spacing: 0.01em;
+    margin-top: 0.6vh;
+    -webkit-text-stroke: 0;
+    text-shadow: 0.15vh 0.15vh 0 rgba(0,0,0,0.2);
+  }
+
+  .status-btn.open .bay {
+    display: block;
+    color: #ffffff;
+  }
+
+  /* きらめきが右方向へ流れるエフェクト（受付中のみ動作） */
+  .status-btn::after {
+    content: "";
+    position: absolute;
+    top: -50%;
+    left: -30%;
+    width: 25%;
+    height: 200%;
+    background: linear-gradient(120deg, transparent, rgba(255,255,255,0.55), transparent);
+    transform: rotate(20deg);
+    opacity: 0;
+  }
+
+  /* ===== トーナメント中（受付停止）状態：グレーで落ち着かせる ===== */
+  .status-btn.tournament {
+    background: linear-gradient(160deg, var(--gray-bg-1), var(--gray-bg-2));
+  }
+  .status-btn.tournament .icon {
+    opacity: var(--gray-icon-opacity);
+    filter: grayscale(1) drop-shadow(0 2px 2px rgba(0,0,0,0.2));
+  }
+  .status-btn.tournament .label {
+    color: var(--gray-font);
+    font-size: 4.6vh;
+    -webkit-text-stroke: 0.15vh rgba(0,0,0,0.15);
+    text-shadow: none;
+  }
+
+  /* ===== 受付中！状態：色が輝き、文字も大きくテンションUP ===== */
+  .status-btn.open .icon {
+    opacity: 1;
+  }
+  .status-btn.open .label {
+    color: #ffffff;
+    font-size: 7.4vh;
+  }
+  .status-btn.open::after {
+    opacity: 1;
+    animation: shine 2.2s ease-in-out infinite;
+  }
+  .status-btn.open {
+    animation: pulse 1.3s ease-in-out infinite;
+  }
+
+  @keyframes shine {
+    0%   { left: -30%; }
+    45%  { left: 120%; }
+    100% { left: 120%; }
+  }
+
+  @keyframes pulse {
+    0%, 100% {
+      box-shadow:
+        inset 0 -0.8vh 0 rgba(0,0,0,0.18),
+        inset 0 0.6vh 0 rgba(255,255,255,0.45),
+        0 0.6vh 0 rgba(0,0,0,0.35),
+        0 0 2.5vh 0.4vh var(--glow);
+      transform: scale(1);
+    }
+    50% {
+      box-shadow:
+        inset 0 -0.8vh 0 rgba(0,0,0,0.18),
+        inset 0 0.6vh 0 rgba(255,255,255,0.45),
+        0 0.6vh 0 rgba(0,0,0,0.35),
+        0 0 6vh 1.4vh var(--glow);
+      transform: scale(1.015);
+    }
+  }
+
+  .status-btn.open[data-name="dran"]   { background: linear-gradient(160deg, #8FE3FA, #2FA8DE); --glow: #4FCBFF; }
+  .status-btn.open[data-name="hells"]  { background: linear-gradient(160deg, #FFAFAF, #FF4C4C); --glow: #FF5A5A; }
+  .status-btn.open[data-name="rare"]   { background: linear-gradient(160deg, #B7C6F2, #6E85D6); --glow: #7C93FF; }
+  .status-btn.open[data-name="wizard"] { background: linear-gradient(160deg, #FFF176, #FFD400); --glow: #FFE100; }
+  .status-btn.open[data-name="knight"] { background: linear-gradient(160deg, #D4F8AE, #8BE24E); --glow: #9CFF4D; }
+
+  .logo-cell {
+    cursor: pointer;
+  }
+
+  /* ===== 使用ベイ設定モーダル ===== */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.65);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+  }
+
+  .modal-overlay.show {
+    display: flex;
+  }
+
+  .modal-box {
+    background: #ffffff;
+    border-radius: 2vh;
+    padding: 3vh 3vw;
+    width: min(640px, 90vw);
+    max-height: 88vh;
+    overflow-y: auto;
+    box-shadow: 0 1vh 4vh rgba(0,0,0,0.5);
+  }
+
+  .modal-box h2 {
+    margin: 0 0 2vh 0;
+    font-size: 2.6vh;
+    font-weight: 900;
+    color: #111;
+  }
+
+  .modal-field {
+    display: flex;
+    align-items: center;
+    gap: 1.2vw;
+    margin-bottom: 1.6vh;
+  }
+
+  .modal-field .swatch {
+    width: 3.2vh;
+    height: 3.2vh;
+    border-radius: 0.8vh;
+    flex-shrink: 0;
+    border: 0.2vh solid rgba(0,0,0,0.25);
+  }
+
+  .modal-field label {
+    width: 12vw;
+    min-width: 90px;
+    font-weight: 700;
+    font-size: 1.9vh;
+    color: #333;
+    flex-shrink: 0;
+  }
+
+  .modal-field input[type="text"] {
+    flex: 1;
+    font-size: 1.9vh;
+    padding: 1vh 1.2vh;
+    border: 0.2vh solid #ccc;
+    border-radius: 1vh;
+    font-family: inherit;
+  }
+
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 1.2vw;
+    margin-top: 2.4vh;
+  }
+
+  .modal-actions button {
+    font-size: 2vh;
+    font-weight: 900;
+    padding: 1.2vh 2.4vw;
+    border: none;
+    border-radius: 1.2vh;
+    cursor: pointer;
+  }
+
+  .btn-save {
+    background: #FF4C4C;
+    color: #fff;
+  }
+
+  .btn-cancel {
+    background: #e0e0e0;
+    color: #333;
+  }
+
+  .swatch-dran   { background: #2FA8DE; }
+  .swatch-hells  { background: #FF4C4C; }
+  .swatch-rare   { background: #6E85D6; }
+  .swatch-wizard { background: #FFD400; }
+  .swatch-knight { background: #8BE24E; }
+
+</style>
+</head>
+<body>
+
+<div class="screen">
+  <div class="logo-cell" id="logoBtn" title="タップしてベイ名を編集">
+    <img src="image/logo.png" alt="ジャッジ討伐">
+  </div>
+  <button class="status-btn tournament" data-name="rare">
+    <img class="icon" src="image/Rare.png" alt="紺">
+    <span class="text-wrap">
+      <span class="label">トーナメント中</span>
+      <span class="bay"></span>
+    </span>
+  </button>
+
+  <button class="status-btn tournament" data-name="dran">
+    <img class="icon" src="image/Dran.png" alt="青">
+    <span class="text-wrap">
+      <span class="label">トーナメント中</span>
+      <span class="bay"></span>
+    </span>
+  </button>
+  <button class="status-btn tournament" data-name="wizard">
+    <img class="icon" src="image/Wizard.png" alt="黄">
+    <span class="text-wrap">
+      <span class="label">トーナメント中</span>
+      <span class="bay"></span>
+    </span>
+  </button>
+
+  <button class="status-btn tournament" data-name="hells">
+    <img class="icon" src="image/Hells.png" alt="赤">
+    <span class="text-wrap">
+      <span class="label">トーナメント中</span>
+      <span class="bay"></span>
+    </span>
+  </button>
+  <button class="status-btn tournament" data-name="knight">
+    <img class="icon" src="image/Knight.png" alt="黄緑">
+    <span class="text-wrap">
+      <span class="label">トーナメント中</span>
+      <span class="bay"></span>
+    </span>
+  </button>
+</div>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal-box">
+    <h2>使用ベイ名の設定</h2>
+
+    <div class="modal-field">
+      <span class="swatch swatch-rare"></span>
+      <label for="bay-rare">紺</label>
+      <input type="text" id="bay-rare" placeholder="例：ナイトフォートレスGVM-85DB">
+    </div>
+    <div class="modal-field">
+      <span class="swatch swatch-dran"></span>
+      <label for="bay-dran">青</label>
+      <input type="text" id="bay-dran" placeholder="例：ナイトフォートレスGVM-85DB">
+    </div>
+    <div class="modal-field">
+      <span class="swatch swatch-wizard"></span>
+      <label for="bay-wizard">黄</label>
+      <input type="text" id="bay-wizard" placeholder="例：ナイトフォートレスGVM-85DB">
+    </div>
+    <div class="modal-field">
+      <span class="swatch swatch-hells"></span>
+      <label for="bay-hells">赤</label>
+      <input type="text" id="bay-hells" placeholder="例：ナイトフォートレスGVM-85DB">
+    </div>
+    <div class="modal-field">
+      <span class="swatch swatch-knight"></span>
+      <label for="bay-knight">黄緑</label>
+      <input type="text" id="bay-knight" placeholder="例：ナイトフォートレスGVM-85DB">
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-cancel" id="btnCancel">キャンセル</button>
+      <button class="btn-save" id="btnSave">保存する</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const STORAGE_KEY = 'judgeToubatsu_bayNames';
+  const names = ['dran', 'hells', 'rare', 'wizard', 'knight'];
+
+  const buttons = document.querySelectorAll('.status-btn');
+
+  // ---- 使用ベイ名の読み込み・保存 ----
+  function loadBayNames() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function saveBayNames(data) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch (e) {
+      console.error('保存に失敗しました', e);
+    }
+  }
+
+  function applyBayNames() {
+    const data = loadBayNames();
+    buttons.forEach(btn => {
+      const name = btn.dataset.name;
+      const bayEl = btn.querySelector('.bay');
+      const value = data[name] || '';
+      bayEl.textContent = value ? `使用ベイ：${value}` : '';
+    });
+  }
+
+  applyBayNames();
+
+  // ---- ボタンのタップで状態切り替え ----
+  buttons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const label = btn.querySelector('.label');
+      const isOpen = btn.classList.contains('open');
+
+      if (isOpen) {
+        btn.classList.remove('open');
+        btn.classList.add('tournament');
+        label.textContent = 'トーナメント中';
+      } else {
+        btn.classList.remove('tournament');
+        btn.classList.add('open');
+        label.textContent = '受付中！';
+      }
+    });
+  });
+
+  // ---- ロゴタップで編集モーダルを開閉 ----
+  const logoBtn = document.getElementById('logoBtn');
+  const modalOverlay = document.getElementById('modalOverlay');
+  const btnSave = document.getElementById('btnSave');
+  const btnCancel = document.getElementById('btnCancel');
+
+  function openModal() {
+    const data = loadBayNames();
+    names.forEach(name => {
+      const input = document.getElementById(`bay-${name}`);
+      input.value = data[name] || '';
+    });
+    modalOverlay.classList.add('show');
+  }
+
+  function closeModal() {
+    modalOverlay.classList.remove('show');
+  }
+
+  logoBtn.addEventListener('click', openModal);
+  btnCancel.addEventListener('click', closeModal);
+
+  // オーバーレイの背景部分をタップしても閉じる
+  modalOverlay.addEventListener('click', (e) => {
+    if (e.target === modalOverlay) closeModal();
+  });
+
+  btnSave.addEventListener('click', () => {
+    const data = {};
+    names.forEach(name => {
+      const input = document.getElementById(`bay-${name}`);
+      data[name] = input.value.trim();
+    });
+    saveBayNames(data);
+    applyBayNames();
+    closeModal();
+  });
+</script>
+
+</body>
+</html>
